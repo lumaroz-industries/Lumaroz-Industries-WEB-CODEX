@@ -24,6 +24,10 @@ export default function App() {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef(0);
+  const lastFrameTimeRef = useRef(0);
+  const fpsAccumulatorRef = useRef(0);
+  const fpsFrameCountRef = useRef(0);
+  const lastTrackingRef = useRef(false);
 
   const [activeEffect, setActiveEffect] = useState<EffectId>(DEFAULT_EFFECT);
   const [cameraOn, setCameraOn] = useState(false);
@@ -60,7 +64,10 @@ export default function App() {
 
     const frame = tracker.detect(video);
     if (frame) {
-      setTracking(true);
+      if (!lastTrackingRef.current) {
+        lastTrackingRef.current = true;
+        setTracking(true);
+      }
       const mirrored = {
         ...frame,
         center: { x: 1 - frame.center.x, y: frame.center.y },
@@ -68,14 +75,24 @@ export default function App() {
       };
       renderEffect(activeEffect, mirrored, fxCtx, fx, performance.now());
     } else {
-      setTracking(false);
+      if (lastTrackingRef.current) {
+        lastTrackingRef.current = false;
+        setTracking(false);
+      }
       fxCtx.clearRect(0, 0, fx.width, fx.height);
     }
 
     const now = performance.now();
-    const elapsed = Math.max(1, now - (drawFrame as unknown as { last?: number }).last!);
-    (drawFrame as unknown as { last?: number }).last = now;
-    setFps((v) => Math.round(v * 0.85 + (1000 / elapsed) * 0.15));
+    if (lastFrameTimeRef.current > 0) {
+      fpsAccumulatorRef.current += now - lastFrameTimeRef.current;
+      fpsFrameCountRef.current += 1;
+      if (fpsAccumulatorRef.current >= 500) {
+        setFps(Math.round((fpsFrameCountRef.current * 1000) / fpsAccumulatorRef.current));
+        fpsAccumulatorRef.current = 0;
+        fpsFrameCountRef.current = 0;
+      }
+    }
+    lastFrameTimeRef.current = now;
 
     rafRef.current = requestAnimationFrame(drawFrame);
   }, [activeEffect]);
@@ -87,6 +104,11 @@ export default function App() {
     streamRef.current = null;
     trackerRef.current?.close();
     trackerRef.current = null;
+    lastFrameTimeRef.current = 0;
+    fpsAccumulatorRef.current = 0;
+    fpsFrameCountRef.current = 0;
+    lastTrackingRef.current = false;
+    setFps(0);
     setCameraOn(false);
     setTracking(false);
     setRecording(false);
