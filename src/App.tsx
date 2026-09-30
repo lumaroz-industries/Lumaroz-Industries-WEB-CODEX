@@ -155,6 +155,39 @@ export default function App() {
     rafRef.current = requestAnimationFrame(drawFrame);
   }, [activeEffect, gestureMode, handTracking, intensity]);
 
+  const initializeTracker = useCallback(async () => {
+    trackerRef.current?.close();
+    trackerRef.current = null;
+    setTrackerReady(false);
+    setTracking(false);
+    setError("");
+
+    const tracker = new FaceTracker();
+    try {
+      await Promise.race([
+        tracker.init(),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(
+            () => reject(new Error("Vision engine initialization timed out after 45 seconds.")),
+            45000
+          )
+        )
+      ]);
+      trackerRef.current = tracker;
+      setTrackerReady(true);
+      return true;
+    } catch (trackerError) {
+      tracker.close();
+      console.error("LUMAROZ VISION: tracker initialization failed", trackerError);
+      setError(
+        trackerError instanceof Error
+          ? trackerError.message
+          : String(trackerError)
+      );
+      return false;
+    }
+  }, []);
+
   const retryVision = useCallback(async () => {
     if (!cameraOn || loading) return;
     setLoading(true);
@@ -188,39 +221,6 @@ export default function App() {
     setHandTracking(false);
     setGesture("none");
     setRecording(false);
-  }, []);
-
-  const initializeTracker = useCallback(async () => {
-    trackerRef.current?.close();
-    trackerRef.current = null;
-    setTrackerReady(false);
-    setTracking(false);
-    setError("");
-
-    const tracker = new FaceTracker();
-    try {
-      await Promise.race([
-        tracker.init(),
-        new Promise<never>((_, reject) =>
-          window.setTimeout(
-            () => reject(new Error("Vision engine initialization timed out after 45 seconds.")),
-            45000
-          )
-        )
-      ]);
-      trackerRef.current = tracker;
-      setTrackerReady(true);
-      return true;
-    } catch (trackerError) {
-      tracker.close();
-      console.error("LUMAROZ VISION: tracker initialization failed", trackerError);
-      setError(
-        trackerError instanceof Error
-          ? trackerError.message
-          : String(trackerError)
-      );
-      return false;
-    }
   }, []);
 
   const startCamera = useCallback(async () => {
