@@ -38,6 +38,7 @@ function getCameraError(error: unknown): string {
 
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraFrameRef = useRef<HTMLDivElement>(null);
   const baseCanvasRef = useRef<HTMLCanvasElement>(null);
   const fxCanvasRef = useRef<HTMLCanvasElement>(null);
   const trackerRef = useRef<FaceTracker | null>(null);
@@ -378,14 +379,14 @@ export default function App() {
 
       <section className="workspace">
         <div className={`stage ${fullscreen ? "stage-fullscreen" : ""}`}>
-          <div className="camera-frame">
+          <div ref={cameraFrameRef} className="camera-frame">
             <div className="stage-grid" />
             <video ref={videoRef} playsInline muted className="source-video" />
             <canvas ref={baseCanvasRef} className="render-layer base-layer" />
             <canvas ref={fxCanvasRef} className="render-layer effects-layer" />
             {cameraOn && (
               <WidgetLayer
-                frameRef={videoRef.current?.parentElement as HTMLDivElement | null ? { current: videoRef.current?.parentElement as HTMLDivElement } : { current: null }}
+                frameRef={cameraFrameRef}
                 handControlRef={handControlRef}
                 fps={fps}
                 tracking={tracking}
