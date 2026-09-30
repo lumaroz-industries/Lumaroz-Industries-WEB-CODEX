@@ -32,3 +32,19 @@ export type EffectPreset = {
   short: string;
   description: string;
 };
+
+export type WidgetKind = "vision" | "system" | "clock" | "browser";
+
+export type WidgetFrame = {
+  id: string;
+  kind: WidgetKind;
+  title: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  locked: boolean;
+  z: number;
+  minimized: boolean;
+};
