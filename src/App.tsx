@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CircleStop, Download, Gauge, Play, RotateCcw, Sparkles, Video, X } from "lucide-react";
 import { FaceTracker } from "./vision/faceTracker";
 import { renderEffect } from "./effects/effectRenderer";
-import type { EffectFrame, EffectPreset, EffectId } from "./types";
+import type { EffectPreset, EffectId } from "./types";
 
 const EFFECTS: EffectPreset[] = [
   { id: "orbit", name: "ORBIT", short: "01", description: "Rotating spatial rings locked to your face." },
@@ -13,6 +13,29 @@ const EFFECTS: EffectPreset[] = [
 ];
 
 const DEFAULT_EFFECT: EffectId = "orbit";
+
+function getCameraError(error: unknown): string {
+  if (error instanceof DOMException) {
+    switch (error.name) {
+      case "NotAllowedError":
+        return "Camera or microphone permission was denied. Click the camera icon in the address bar, allow access, then try again.";
+      case "NotFoundError":
+        return "No camera was found. Connect a webcam and try again.";
+      case "NotReadableError":
+        return "The camera is already being used by another app. Close apps such as Camera, Teams, Discord, OBS, or another browser tab and try again.";
+      case "OverconstrainedError":
+        return "The requested camera mode is unavailable. Retrying with a basic camera configuration may fix this.";
+      case "SecurityError":
+        return "The browser blocked camera access for security reasons. Run the app from localhost or HTTPS.";
+      case "AbortError":
+        return "The camera startup was interrupted. Try activating it again.";
+    }
+    return `${error.name}: ${error.message || "Camera access failed."}`;
+  }
+
+  if (error instanceof Error) return error.message;
+  return "Unable to start the camera. Check browser permissions and your connected webcam.";
+}
 
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -48,8 +71,10 @@ export default function App() {
     const width = video.videoWidth || 1280;
     const height = video.videoHeight || 720;
     if (base.width !== width || base.height !== height) {
-      base.width = width; base.height = height;
-      fx.width = width; fx.height = height;
+      base.width = width;
+      base.height = height;
+      fx.width = width;
+      fx.height = height;
     }
 
     const baseCtx = base.getContext("2d");
@@ -68,6 +93,7 @@ export default function App() {
         lastTrackingRef.current = true;
         setTracking(true);
       }
+
       const mirrored = {
         ...frame,
         center: { x: 1 - frame.center.x, y: frame.center.y },
@@ -93,17 +119,28 @@ export default function App() {
       }
     }
     lastFrameTimeRef.current = now;
-
     rafRef.current = requestAnimationFrame(drawFrame);
   }, [activeEffect]);
 
   const stopCamera = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
+
+    recorderRef.current?.stop();
+    recorderRef.current = null;
+
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+
+    const video = videoRef.current;
+    if (video) {
+      video.pause();
+      video.srcObject = null;
+    }
+
     trackerRef.current?.close();
     trackerRef.current = null;
+
     lastFrameTimeRef.current = 0;
     fpsAccumulatorRef.current = 0;
     fpsFrameCountRef.current = 0;
@@ -112,39 +149,78 @@ export default function App() {
     setCameraOn(false);
     setTracking(false);
     setRecording(false);
-    recorderRef.current?.stop();
-    recorderRef.current = null;
   }, []);
 
   const startCamera = useCallback(async () => {
-    if (cameraOn) return;
+    if (cameraOn || loading) return;
+
     setError("");
     setLoading(true);
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-        audio: true
-      });
+      if (!window.isSecureContext && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+        throw new Error("Camera access requires HTTPS or localhost.");
+      }
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("This browser does not expose camera access. Use a current Chrome, Edge, or Firefox browser.");
+      }
+
+      let stream: MediaStream;
+      try {
+        // Request camera + microphone first so recording can include audio.
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+          audio: true
+        });
+      } catch (mediaError) {
+        // A microphone permission/device failure should not prevent the visual experience.
+        if (mediaError instanceof DOMException &&
+            ["NotAllowedError", "NotFoundError", "NotReadableError"].includes(mediaError.name)) {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+            audio: false
+          });
+        } else {
+          throw mediaError;
+        }
+      }
+
+      streamRef.current = stream;
+
       const video = videoRef.current;
       if (!video) throw new Error("Camera surface is unavailable.");
+
       video.srcObject = stream;
+      video.muted = true;
+      video.playsInline = true;
       await video.play();
+
+      if (video.readyState < 2 || !video.videoWidth) {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = window.setTimeout(() => reject(new Error("Camera opened, but no video frames were received.")), 5000);
+          const onReady = () => {
+            window.clearTimeout(timeout);
+            video.removeEventListener("loadeddata", onReady);
+            resolve();
+          };
+          video.addEventListener("loadeddata", onReady, { once: true });
+        });
+      }
 
       const tracker = new FaceTracker();
       await tracker.init();
       trackerRef.current = tracker;
-      streamRef.current = stream;
+
       setCameraOn(true);
     } catch (err) {
-      const message = err instanceof DOMException && err.name === "NotAllowedError"
-        ? "Camera permission was denied. Allow camera access and try again."
-        : err instanceof Error ? err.message : "Unable to start the camera.";
+      const message = getCameraError(err);
       setError(message);
       stopCamera();
     } finally {
       setLoading(false);
     }
-  }, [cameraOn, stopCamera]);
+  }, [cameraOn, loading, stopCamera]);
 
   useEffect(() => {
     if (cameraOn && trackerRef.current) {
@@ -157,7 +233,10 @@ export default function App() {
 
   useEffect(() => {
     if (!recording) return;
-    const timer = window.setInterval(() => setRecordingTime(Math.floor((Date.now() - startedAtRef.current) / 1000)), 250);
+    const timer = window.setInterval(
+      () => setRecordingTime(Math.floor((Date.now() - startedAtRef.current) / 1000)),
+      250
+    );
     return () => window.clearInterval(timer);
   }, [recording]);
 
@@ -181,12 +260,12 @@ export default function App() {
     };
 
     const canvasStream = composite.captureStream(30);
-    const audioTracks = streamRef.current.getAudioTracks();
-    audioTracks.forEach((track) => canvasStream.addTrack(track));
+    streamRef.current.getAudioTracks().forEach((track) => canvasStream.addTrack(track));
 
     const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
       ? "video/webm;codecs=vp9,opus"
       : "video/webm";
+
     const recorder = new MediaRecorder(canvasStream, { mimeType: mime });
     chunksRef.current = [];
     recorder.ondataavailable = (event) => event.data.size && chunksRef.current.push(event.data);
@@ -197,8 +276,9 @@ export default function App() {
       anchor.href = url;
       anchor.download = `lumaroz-vision-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`;
       anchor.click();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     };
+
     recorderRef.current = recorder;
     recorder.start(200);
     startedAtRef.current = Date.now();
@@ -258,7 +338,7 @@ export default function App() {
                 <div className="corner-label tl">CAM // 01</div>
                 <div className="corner-label tr">LIVE / {active.name}</div>
                 <div className="corner-label bl">{tracking ? "TRACK LOCKED" : "SEARCHING FACE"}</div>
-                <div className="corner-label br">{Math.round((videoRef.current?.videoWidth || 1280))} × {Math.round((videoRef.current?.videoHeight || 720))}</div>
+                <div className="corner-label br">{Math.round(videoRef.current?.videoWidth || 1280)} × {Math.round(videoRef.current?.videoHeight || 720)}</div>
               </>
             )}
           </div>
@@ -309,7 +389,7 @@ export default function App() {
           <div className="panel-info">
             <div className="micro">ENGINE STATUS</div>
             <div className="metric"><span>FACE TRACKER</span><b>{cameraOn ? "ONLINE" : "OFFLINE"}</b></div>
-            <div className="metric"><span>GPU DELEGATE</span><b>READY</b></div>
+            <div className="metric"><span>GPU DELEGATE</span><b>{cameraOn ? "READY" : "STANDBY"}</b></div>
             <div className="metric"><span>PROCESSING</span><b>LOCAL</b></div>
           </div>
 
