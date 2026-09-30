@@ -15,19 +15,41 @@ export class FaceTracker {
 
   async init() {
     const vision = await FilesetResolver.forVisionTasks(WASM_URL);
-    this.landmarker = await FaceLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: MODEL_URL,
-        delegate: "GPU"
-      },
-      runningMode: "VIDEO",
-      numFaces: 1,
-      minFaceDetectionConfidence: 0.55,
-      minFacePresenceConfidence: 0.55,
-      minTrackingConfidence: 0.55,
-      outputFaceBlendshapes: false,
-      outputFacialTransformationMatrixes: false
-    });
+
+    try {
+      // GPU is preferred for smooth real-time effects.
+      this.landmarker = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: MODEL_URL,
+          delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numFaces: 1,
+        minFaceDetectionConfidence: 0.55,
+        minFacePresenceConfidence: 0.55,
+        minTrackingConfidence: 0.55,
+        outputFaceBlendshapes: false,
+        outputFacialTransformationMatrixes: false
+      });
+    } catch (gpuError) {
+      console.warn("LUMAROZ VISION: GPU face tracker unavailable; falling back to CPU.", gpuError);
+
+      // Some browsers/GPUs cannot initialize MediaPipe's WebGL delegate.
+      // CPU keeps the camera experience functional instead of failing startup.
+      this.landmarker = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: MODEL_URL,
+          delegate: "CPU"
+        },
+        runningMode: "VIDEO",
+        numFaces: 1,
+        minFaceDetectionConfidence: 0.55,
+        minFacePresenceConfidence: 0.55,
+        minTrackingConfidence: 0.55,
+        outputFaceBlendshapes: false,
+        outputFacialTransformationMatrixes: false
+      });
+    }
   }
 
   detect(video: HTMLVideoElement): FaceFrame | null {
