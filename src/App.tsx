@@ -22,9 +22,9 @@ function getCameraError(error: unknown): string {
       case "NotFoundError":
         return "Chrome cannot find a camera. Check that a webcam is connected and visible in Windows Camera settings.";
       case "NotReadableError":
-        return "Chrome can see the camera, but another application is using it. Close Camera, Teams, Discord, OBS, Zoom, other browser tabs, then retry.";
+        return "Chrome can see the camera, but another application is using it. Close Camera, Teams, Discord, OBS, Zoom, or other browser tabs, then retry.";
       case "OverconstrainedError":
-        return "The camera rejected the requested settings. LUMAROZ will use the browser's default camera configuration.";
+        return "The camera rejected the requested settings. LUMAROZ will use the browser default camera configuration.";
       case "SecurityError":
         return "The browser blocked camera access for security reasons. localhost should be allowed.";
       case "AbortError":
@@ -37,7 +37,16 @@ function getCameraError(error: unknown): string {
     return `Startup error: ${error.message || error.name || "Unknown error."}`;
   }
 
-  return `Unknown camera startup error: ${String(error)}`;
+  if (typeof error === "string") return `Startup error: ${error}`;
+
+  if (error && typeof error === "object") {
+    const event = error as { type?: string; message?: string; name?: string; error?: unknown };
+    if (event.type || event.message || event.name) {
+      return `Startup event [${event.type || event.name || "unknown"}]: ${event.message || "The browser or vision engine emitted an event error."}`;
+    }
+  }
+
+  return `Unknown startup error: ${String(error)}`;
 }
 
 export default function App() {
@@ -69,10 +78,11 @@ export default function App() {
     const base = baseCanvasRef.current;
     const fx = fxCanvasRef.current;
     const tracker = trackerRef.current;
-    if (!video || !base || !fx || !tracker) return;
+    if (!video || !base || !fx) return;
 
     const width = video.videoWidth || 1280;
     const height = video.videoHeight || 720;
+
     if (base.width !== width || base.height !== height) {
       base.width = width;
       base.height = height;
@@ -90,7 +100,7 @@ export default function App() {
     baseCtx.drawImage(video, 0, 0, width, height);
     baseCtx.restore();
 
-    const frame = tracker.detect(video);
+    const frame = tracker ? tracker.detect(video) : null;
     if (frame) {
       if (!lastTrackingRef.current) {
         lastTrackingRef.current = true;
@@ -195,11 +205,19 @@ export default function App() {
         });
       }
 
-      const tracker = new FaceTracker();
-      await tracker.init();
-      trackerRef.current = tracker;
-
+      // The camera itself is now known-good. Bring the live video online
+      // before loading MediaPipe so a vision-engine failure cannot hide the webcam.
       setCameraOn(true);
+
+      try {
+        const tracker = new FaceTracker();
+        await tracker.init();
+        trackerRef.current = tracker;
+        setError("");
+      } catch (trackerError) {
+        console.error("LUMAROZ VISION: face tracker initialization failed", trackerError);
+        setError(`Camera is working, but the face tracker could not initialize. ${getCameraError(trackerError)}`);
+      }
     } catch (err) {
       const message = getCameraError(err);
       setError(message);
@@ -377,8 +395,8 @@ export default function App() {
 
           <div className="panel-info">
             <div className="micro">ENGINE STATUS</div>
-            <div className="metric"><span>FACE TRACKER</span><b>{cameraOn ? "ONLINE" : "OFFLINE"}</b></div>
-            <div className="metric"><span>GPU DELEGATE</span><b>{cameraOn ? "READY" : "STANDBY"}</b></div>
+            <div className="metric"><span>FACE TRACKER</span><b>{trackerRef.current ? "ONLINE" : cameraOn ? "LOADING" : "OFFLINE"}</b></div>
+            <div className="metric"><span>GPU DELEGATE</span><b>{trackerRef.current ? "READY" : cameraOn ? "INITIALIZING" : "STANDBY"}</b></div>
             <div className="metric"><span>PROCESSING</span><b>LOCAL</b></div>
           </div>
 
