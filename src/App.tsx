@@ -15,7 +15,10 @@ const EFFECTS: EffectPreset[] = [
   { id: "scan", name: "SCAN", short: "04", description: "Technical scan frame anchored to facial movement." },
   { id: "prism", name: "PRISM", short: "05", description: "Rotating polygonal geometry around the head." },
   { id: "constellation", name: "CONSTELLATION", short: "06", description: "Landmark constellation mapped across your face." },
-  { id: "neural", name: "NEURAL", short: "07", description: "Animated neural-style network driven by landmarks." }
+  { id: "neural", name: "NEURAL", short: "07", description: "Animated neural-style network driven by landmarks." },
+  { id: "energy", name: "ENERGY", short: "08", description: "Pulsing energy field reacting to face scale and motion." },
+  { id: "particle", name: "PARTICLE", short: "09", description: "Orbiting particle cloud anchored to facial landmarks." },
+  { id: "mesh", name: "MESH", short: "10", description: "Dense technical facial wireframe with depth shimmer." }
 ];
 
 const DEFAULT_EFFECT: EffectId = "orbit";
