@@ -18,23 +18,26 @@ function getCameraError(error: unknown): string {
   if (error instanceof DOMException) {
     switch (error.name) {
       case "NotAllowedError":
-        return "Camera or microphone permission was denied. Click the camera icon in the address bar, allow access, then try again.";
+        return "Camera access was denied by Chrome/Windows. Check the camera permission for localhost:5173 and Windows Settings > Privacy & security > Camera.";
       case "NotFoundError":
-        return "No camera was found. Connect a webcam and try again.";
+        return "Chrome cannot find a camera. Check that a webcam is connected and visible in Windows Camera settings.";
       case "NotReadableError":
-        return "The camera is already being used by another app. Close apps such as Camera, Teams, Discord, OBS, or another browser tab and try again.";
+        return "Chrome can see the camera, but another application is using it. Close Camera, Teams, Discord, OBS, Zoom, other browser tabs, then retry.";
       case "OverconstrainedError":
-        return "The requested camera mode is unavailable. Retrying with a basic camera configuration may fix this.";
+        return "The camera rejected the requested settings. LUMAROZ will use the browser's default camera configuration.";
       case "SecurityError":
-        return "The browser blocked camera access for security reasons. Run the app from localhost or HTTPS.";
+        return "The browser blocked camera access for security reasons. localhost should be allowed.";
       case "AbortError":
-        return "The camera startup was interrupted. Try activating it again.";
+        return "Camera startup was interrupted. Try activating it again.";
     }
-    return `${error.name}: ${error.message || "Camera access failed."}`;
+    return `Camera error [${error.name}]: ${error.message || "No additional browser message."}`;
   }
 
-  if (error instanceof Error) return error.message;
-  return "Unable to start the camera. Check browser permissions and your connected webcam.";
+  if (error instanceof Error) {
+    return `Startup error: ${error.message || error.name || "Unknown error."}`;
+  }
+
+  return `Unknown camera startup error: ${String(error)}`;
 }
 
 export default function App() {
@@ -166,26 +169,10 @@ export default function App() {
         throw new Error("This browser does not expose camera access. Use a current Chrome, Edge, or Firefox browser.");
       }
 
-      let stream: MediaStream;
-      try {
-        // Request camera + microphone first so recording can include audio.
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-          audio: true
-        });
-      } catch (mediaError) {
-        // A microphone permission/device failure should not prevent the visual experience.
-        if (mediaError instanceof DOMException &&
-            ["NotAllowedError", "NotFoundError", "NotReadableError"].includes(mediaError.name)) {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-            audio: false
-          });
-        } else {
-          throw mediaError;
-        }
-      }
-
+      // Start with the simplest possible camera request.
+      // Vision does not require a microphone, so audio permission/device problems
+      // must never prevent the camera and face tracker from starting.
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       streamRef.current = stream;
 
       const video = videoRef.current;
@@ -260,6 +247,8 @@ export default function App() {
     };
 
     const canvasStream = composite.captureStream(30);
+    // Camera-only startup is intentional. Audio can be added later without
+    // making the core face-tracking experience depend on microphone permissions.
     streamRef.current.getAudioTracks().forEach((track) => canvasStream.addTrack(track));
 
     const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
