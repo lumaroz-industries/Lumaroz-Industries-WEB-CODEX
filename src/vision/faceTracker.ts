@@ -24,7 +24,9 @@ function classifyHand(points: Point[]): HandFrame["gesture"] {
   const pinch = distance(points[4], points[8]) / palm;
   const tips = [8, 12, 16, 20];
   const pips = [6, 10, 14, 18];
-  const extended = tips.filter((tip, i) => distance(points[tip], points[0]) > distance(points[pips[i]], points[0])).length;
+  const extended = tips.filter((tip, i) =>
+    distance(points[tip], points[0]) > distance(points[pips[i]], points[0])
+  ).length;
 
   if (pinch < 0.55) return "pinch";
   if (extended >= 4) return "open";
@@ -44,11 +46,32 @@ export class FaceTracker {
       vision = await FilesetResolver.forVisionTasks(WASM_URL);
     } catch (error) {
       console.error("LUMAROZ VISION: MediaPipe WASM failed to load.", error);
-      throw new Error("MediaPipe WASM could not load. Check that Chrome can reach cdn.jsdelivr.net.");
+      throw new Error(
+        "MediaPipe WASM could not load. Check that Chrome can reach cdn.jsdelivr.net."
+      );
     }
 
+    // FACE IS THE CRITICAL PATH.
+    // Do not block the entire Vision Engine on optional hand-model loading.
     try {
-      this.face = await FaceLandmarker.createFromOptions(vision, {
+      this.face = await this.createFaceTracker(vision);
+    } catch (error) {
+      console.error("LUMAROZ VISION: face model failed to initialize.", error);
+      throw new Error(
+        "MediaPipe face model could not initialize. Check that Chrome can reach storage.googleapis.com."
+      );
+    }
+
+    // Start hand tracking independently. The camera + face engine can become
+    // ONLINE immediately while the larger hand model loads in the background.
+    void this.initHands(vision);
+  }
+
+  private async createFaceTracker(
+    vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>
+  ) {
+    try {
+      return await FaceLandmarker.createFromOptions(vision, {
         baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate: "GPU" },
         runningMode: "VIDEO",
         numFaces: 1,
@@ -59,9 +82,13 @@ export class FaceTracker {
         outputFacialTransformationMatrixes: false
       });
     } catch (gpuError) {
-      console.warn("LUMAROZ VISION: GPU face tracker unavailable; falling back to CPU.", gpuError);
+      console.warn(
+        "LUMAROZ VISION: GPU face tracker unavailable; falling back to CPU.",
+        gpuError
+      );
+
       try {
-        this.face = await FaceLandmarker.createFromOptions(vision, {
+        return await FaceLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate: "CPU" },
           runningMode: "VIDEO",
           numFaces: 1,
@@ -72,11 +99,15 @@ export class FaceTracker {
           outputFacialTransformationMatrixes: false
         });
       } catch (cpuError) {
-        console.error("LUMAROZ VISION: MediaPipe face model failed to load.", cpuError);
-        throw new Error("MediaPipe face model could not load. Check that Chrome can reach storage.googleapis.com.");
+        console.error("LUMAROZ VISION: CPU face tracker failed.", cpuError);
+        throw cpuError;
       }
     }
+  }
 
+  private async initHands(
+    vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>
+  ) {
     try {
       this.hands = await HandLandmarker.createFromOptions(vision, {
         baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "GPU" },
@@ -86,8 +117,10 @@ export class FaceTracker {
         minHandPresenceConfidence: 0.5,
         minTrackingConfidence: 0.5
       });
+      console.info("LUMAROZ VISION: hand tracker online.");
     } catch (gpuError) {
       console.warn("LUMAROZ VISION: GPU hand tracker unavailable; trying CPU.", gpuError);
+
       try {
         this.hands = await HandLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "CPU" },
@@ -97,8 +130,12 @@ export class FaceTracker {
           minHandPresenceConfidence: 0.5,
           minTrackingConfidence: 0.5
         });
+        console.info("LUMAROZ VISION: hand tracker online on CPU.");
       } catch (handError) {
-        console.warn("LUMAROZ VISION: Hand tracker unavailable; face tracking will continue.", handError);
+        console.warn(
+          "LUMAROZ VISION: optional hand tracker unavailable; face tracking remains online.",
+          handError
+        );
         this.hands = null;
       }
     }
@@ -117,7 +154,12 @@ export class FaceTracker {
 
     let face: FaceFrame | null = null;
     if (landmarks && landmarks.length >= 20) {
-      const points: Point[] = landmarks.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+      const points: Point[] = landmarks.map((p) => ({
+        x: p.x,
+        y: p.y,
+        z: p.z
+      }));
+
       const left = points[234];
       const right = points[454];
       const top = points[10];
@@ -139,28 +181,48 @@ export class FaceTracker {
     }
 
     const handFrames: HandFrame[] = [];
-    if (this.hands) {
-      const handResult: HandLandmarkerResult = this.hands.detectForVideo(video, now);
-      (handResult.landmarks ?? []).forEach((hand, index) => {
-        const points: Point[] = hand.map((p) => ({ x: p.x, y: p.y, z: p.z }));
-        const xs = points.map((p) => p.x);
-        const ys = points.map((p) => p.y);
-        const center = {
-          x: (Math.min(...xs) + Math.max(...xs)) / 2,
-          y: (Math.min(...ys) + Math.max(...ys)) / 2
-        };
-        const scale = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
-        const handedness = handResult.handednesses?.[index]?.[0]?.displayName as HandFrame["handedness"] | undefined;
 
-        handFrames.push({
-          landmarks: points,
-          center,
-          scale,
-          handedness: handedness === "Left" || handedness === "Right" ? handedness : "Unknown",
-          gesture: classifyHand(points),
-          timestamp: now
+    // Hand detection is optional and never blocks face detection.
+    if (this.hands) {
+      try {
+        const handResult: HandLandmarkerResult = this.hands.detectForVideo(video, now);
+
+        (handResult.landmarks ?? []).forEach((hand, index) => {
+          const points: Point[] = hand.map((p) => ({
+            x: p.x,
+            y: p.y,
+            z: p.z
+          }));
+
+          const xs = points.map((p) => p.x);
+          const ys = points.map((p) => p.y);
+          const center = {
+            x: (Math.min(...xs) + Math.max(...xs)) / 2,
+            y: (Math.min(...ys) + Math.max(...ys)) / 2
+          };
+          const scale = Math.max(
+            Math.max(...xs) - Math.min(...xs),
+            Math.max(...ys) - Math.min(...ys)
+          );
+
+          const displayName = handResult.handednesses?.[index]?.[0]?.displayName;
+          const handedness: HandFrame["handedness"] =
+            displayName === "Left" || displayName === "Right"
+              ? displayName
+              : "Unknown";
+
+          handFrames.push({
+            landmarks: points,
+            center,
+            scale,
+            handedness,
+            gesture: classifyHand(points),
+            timestamp: now
+          });
         });
-      });
+      } catch (error) {
+        console.warn("LUMAROZ VISION: hand detection frame skipped.", error);
+      }
     }
 
     return { face, hands: handFrames };
