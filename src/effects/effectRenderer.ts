@@ -146,6 +146,77 @@ function drawConstellation(frame: FaceFrame, ctx: CanvasRenderingContext2D, canv
   });
 }
 
+
+function drawEnergy(frame: FaceFrame, ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, t: number, intensity: number) {
+  const [cx, cy] = point(frame, 1, canvas);
+  const r = frame.scale * canvas.width * (.55 + intensity * .16);
+  const pulse = 1 + Math.sin(t * .004) * (.04 + intensity * .05);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(frame.rotation);
+  for (let i = 0; i < 9; i++) {
+    const a = t * (.0005 + i * .000035) + i * Math.PI / 9;
+    const rr = r * (.55 + (i % 3) * .18) * pulse;
+    ctx.strokeStyle = "rgba(225,235,255," + (0.12 + intensity * .06) + ")";
+    ctx.lineWidth = .7 + intensity * .45;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * rr * .18, Math.sin(a) * rr * .08, rr, a, a + Math.PI * (.7 + intensity * .3));
+    ctx.stroke();
+  }
+  const gradient = ctx.createRadialGradient(0, 0, r * .05, 0, 0, r);
+  gradient.addColorStop(0, "rgba(245,248,255," + (.08 + intensity * .1) + ")");
+  gradient.addColorStop(.55, "rgba(170,190,225,.025)");
+  gradient.addColorStop(1, "rgba(100,120,160,0)");
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawParticle(frame: FaceFrame, ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, t: number, intensity: number) {
+  const ids = [10, 33, 263, 61, 291, 1, 168, 234, 454, 127, 356, 199];
+  ctx.save();
+  ids.forEach((id, node) => {
+    const q = frame.landmarks[id];
+    if (!q) return;
+    for (let i = 0; i < 10; i++) {
+      const a = t * (.0007 + node * .00003) + i * Math.PI * 2 / 10;
+      const orbit = (4 + i * 2 + intensity * 7) * canvas.width * .0025;
+      const x = q.x * canvas.width + Math.cos(a) * orbit;
+      const y = q.y * canvas.height + Math.sin(a * 1.3) * orbit;
+      ctx.fillStyle = "rgba(232,239,255," + (.22 + (i % 3) * .16) + ")";
+      ctx.beginPath();
+      ctx.arc(x, y, 1 + intensity * (i % 2), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  ctx.restore();
+}
+
+function drawMesh(frame: FaceFrame, ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, t: number, intensity: number) {
+  const ids = [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
+  ctx.save();
+  ctx.strokeStyle = "rgba(220,230,248," + (.22 + intensity * .22) + ")";
+  ctx.lineWidth = .55 + intensity * .35;
+  for (let i = 0; i < ids.length; i++) {
+    const a = frame.landmarks[ids[i]];
+    const b = frame.landmarks[ids[(i + 1) % ids.length]];
+    if (!a || !b) continue;
+    ctx.beginPath();
+    ctx.moveTo(a.x * canvas.width, a.y * canvas.height);
+    ctx.lineTo(b.x * canvas.width, b.y * canvas.height);
+    ctx.stroke();
+    if (i % 2 === 0) {
+      ctx.beginPath();
+      ctx.arc(a.x * canvas.width, a.y * canvas.height, 2 + Math.sin(t * .004 + i) * .8 + intensity, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(245,248,255,.7)";
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
 function drawNeural(frame: FaceFrame, ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, t: number, intensity: number) {
   const ids = [10, 338, 297, 284, 389, 454, 323, 361, 397, 378, 152, 148, 176, 149, 234, 127, 162, 21, 54, 103, 67, 109];
   ctx.save();
@@ -217,6 +288,9 @@ export function renderEffect(
   if (id === "prism") drawPrism(frame, ctx, canvas, time, intensity);
   if (id === "constellation") drawConstellation(frame, ctx, canvas, intensity);
   if (id === "neural") drawNeural(frame, ctx, canvas, time, intensity);
+  if (id === "energy") drawEnergy(frame, ctx, canvas, time, intensity);
+  if (id === "particle") drawParticle(frame, ctx, canvas, time, intensity);
+  if (id === "mesh") drawMesh(frame, ctx, canvas, time, intensity);
 
   ctx.save();
   ctx.strokeStyle = "rgba(255,255,255,.22)";
