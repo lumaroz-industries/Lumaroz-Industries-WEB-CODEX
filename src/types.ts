@@ -24,7 +24,7 @@ export type VisionFrame = {
   hands: HandFrame[];
 };
 
-export type EffectId = "orbit" | "grid" | "halo" | "scan" | "prism" | "constellation" | "neural";
+export type EffectId = "orbit" | "grid" | "halo" | "scan" | "prism" | "constellation" | "neural" | "energy" | "particle" | "mesh";
 
 export type EffectPreset = {
   id: EffectId;
