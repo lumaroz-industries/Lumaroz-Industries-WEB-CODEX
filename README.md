@@ -1,16 +1,30 @@
 # LUMAROZ VISION
 
-Real-time browser face tracking and visual effects — built independently for LUMAROZ.
+A standalone browser-based LUMAROZ visual experience inspired by the category demonstrated in the supplied reference videos.
 
-## V0.1 scope
+## V0.2
 
-- Webcam capture in the browser
-- MediaPipe Face Landmarker tracking
+- Live webcam preview
+- MediaPipe face landmark tracking
+- MediaPipe hand tracking
 - Face-locked visual effects
-- Five modular visual presets
-- Live tracking status + FPS
-- Client-side WebM recording with microphone/camera audio
-- No backend, accounts, or REN dependency
+- Seven original visual presets
+- Effect intensity control
+- Gesture mode
+- Pinch gesture intensity interaction
+- Live FPS and engine telemetry
+- Snapshot export
+- Client-side WebM recording
+- Fullscreen camera stage
+- No backend, accounts, database, or REN dependency
+
+## Gestures
+
+- PINCH: changes effect intensity while gesture mode is enabled.
+- OPEN PALM: detected and shown in the vision HUD.
+- CLAW: detected and shown as an interaction state.
+
+The gesture layer is intentionally modular so additional gesture mappings can be added without changing the rendering pipeline.
 
 ## Run locally
 
@@ -19,26 +33,24 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL, allow camera/microphone access, and activate the camera.
+Open the Vite URL and allow camera access.
 
 ## Architecture
 
 ```
 Webcam
   ↓
-MediaPipe Face Landmarker
+MediaPipe Face + Hand Landmarkers
   ↓
-FaceFrame (normalized landmarks + pose)
+VisionFrame
   ↓
-LUMAROZ Effect Renderer
+LUMAROZ Interaction Layer
   ↓
-Camera canvas + VFX canvas
+Original Effect Renderer
   ↓
-Live preview / WebM recording
+Live camera + transparent VFX layer
+  ↓
+Snapshot / WebM export
 ```
 
-The effect engine is intentionally modular. Add a new EffectId and renderer without changing the camera/tracking pipeline.
-
-## Notes
-
-The reference material informed the category and interaction goals. The implementation, UI, rendering code, and effect presets are original LUMAROZ work.
+All vision processing happens locally in the browser. The implementation does not use REN, a backend, accounts, or a database.
