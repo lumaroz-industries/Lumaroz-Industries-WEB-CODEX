@@ -39,7 +39,7 @@ function BrowserWidget() {
   const navigate = () => {
     let next = url.trim();
     if (!next) return;
-    if (!/^https?:\\/\\//i.test(next)) {
+    if (!next.startsWith("http://") && !next.startsWith("https://")) {
       next = "https://www.google.com/search?igu=1&q=" + encodeURIComponent(next);
     }
     setSrc(next);
