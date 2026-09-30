@@ -155,6 +155,16 @@ export default function App() {
     rafRef.current = requestAnimationFrame(drawFrame);
   }, [activeEffect, gestureMode, handTracking, intensity]);
 
+  const retryVision = useCallback(async () => {
+    if (!cameraOn || loading) return;
+    setLoading(true);
+    try {
+      await initializeTracker();
+    } finally {
+      setLoading(false);
+    }
+  }, [cameraOn, loading, initializeTracker]);
+
   const stopCamera = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
@@ -178,6 +188,39 @@ export default function App() {
     setHandTracking(false);
     setGesture("none");
     setRecording(false);
+  }, []);
+
+  const initializeTracker = useCallback(async () => {
+    trackerRef.current?.close();
+    trackerRef.current = null;
+    setTrackerReady(false);
+    setTracking(false);
+    setError("");
+
+    const tracker = new FaceTracker();
+    try {
+      await Promise.race([
+        tracker.init(),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(
+            () => reject(new Error("Vision engine initialization timed out after 45 seconds.")),
+            45000
+          )
+        )
+      ]);
+      trackerRef.current = tracker;
+      setTrackerReady(true);
+      return true;
+    } catch (trackerError) {
+      tracker.close();
+      console.error("LUMAROZ VISION: tracker initialization failed", trackerError);
+      setError(
+        trackerError instanceof Error
+          ? trackerError.message
+          : String(trackerError)
+      );
+      return false;
+    }
   }, []);
 
   const startCamera = useCallback(async () => {
@@ -211,23 +254,14 @@ export default function App() {
       }
 
       setCameraOn(true);
-      try {
-        const tracker = new FaceTracker();
-        await tracker.init();
-        trackerRef.current = tracker;
-        setTrackerReady(true);
-        setError("");
-      } catch (trackerError) {
-        console.error("LUMAROZ VISION: tracker initialization failed", trackerError);
-        setError(`Camera is working, but the vision models could not initialize. ${getCameraError(trackerError)}`);
-      }
+      await initializeTracker();
     } catch (err) {
       setError(getCameraError(err));
       stopCamera();
     } finally {
       setLoading(false);
     }
-  }, [cameraOn, loading, stopCamera]);
+  }, [cameraOn, loading, stopCamera, initializeTracker]);
 
   useEffect(() => {
     if (cameraOn) rafRef.current = requestAnimationFrame(drawFrame);
@@ -330,7 +364,7 @@ export default function App() {
         <div className="brand"><span className="brand-mark"><Sparkles size={15} /></span><span>LUMAROZ</span><b>VISION</b></div>
         <div className="status-line">
           <span className={cameraOn ? "status-dot live" : "status-dot"} />
-          {cameraOn ? (tracking ? "FACE TRACKING" : "SEARCHING") : "SYSTEM STANDBY"}
+          {cameraOn ? (tracking ? "FACE TRACKING" : error ? "VISION ERROR" : "SEARCHING") : "SYSTEM STANDBY"}
           <span className="status-separator" /><span>{fps || "—"} FPS</span>
         </div>
       </header>
@@ -355,6 +389,17 @@ export default function App() {
                   <i>{handTracking ? "HAND LINK" : "FACE LINK"}</i>
                   <i>{gestureLabel}</i>
                 </div>
+                {error && (
+                  <div className="live-error">
+                    <div>
+                      <strong>VISION ENGINE ERROR</strong>
+                      <span>{error}</span>
+                    </div>
+                    <button onClick={retryVision} disabled={loading}>
+                      {loading ? "RETRYING..." : "RETRY VISION"}
+                    </button>
+                  </div>
+                )}
               </>
             )}
 
