@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { FaceTracker } from "./vision/faceTracker";
 import { renderEffect } from "./effects/effectRenderer";
+import { WidgetLayer } from "./widgets/WidgetLayer";
 import type { EffectId, EffectPreset, VisionFrame } from "./types";
 
 const EFFECTS: EffectPreset[] = [
@@ -52,6 +53,7 @@ export default function App() {
   const lastGestureRef = useRef("none");
   const pinchCooldownRef = useRef(0);
   const latestVisionRef = useRef<VisionFrame>({ face: null, hands: [] });
+  const handControlRef = useRef<{ point: { x: number; y: number } | null; pinch: boolean }>({ point: null, pinch: false });
 
   const [activeEffect, setActiveEffect] = useState<EffectId>(DEFAULT_EFFECT);
   const [cameraOn, setCameraOn] = useState(false);
@@ -126,6 +128,10 @@ export default function App() {
     }
 
     const currentGesture = vision.hands[0]?.gesture ?? "none";
+    const activeHand = vision.hands[0];
+    handControlRef.current = activeHand
+      ? { point: { x: 1 - activeHand.center.x, y: activeHand.center.y }, pinch: activeHand.gesture === "pinch" }
+      : { point: null, pinch: false };
     if (currentGesture !== lastGestureRef.current) {
       lastGestureRef.current = currentGesture;
       setGesture(currentGesture);
@@ -220,6 +226,7 @@ export default function App() {
     setTracking(false);
     setHandTracking(false);
     setGesture("none");
+    handControlRef.current = { point: null, pinch: false };
     setRecording(false);
   }, []);
 
@@ -376,6 +383,17 @@ export default function App() {
             <video ref={videoRef} playsInline muted className="source-video" />
             <canvas ref={baseCanvasRef} className="render-layer base-layer" />
             <canvas ref={fxCanvasRef} className="render-layer effects-layer" />
+            {cameraOn && (
+              <WidgetLayer
+                frameRef={videoRef.current?.parentElement as HTMLDivElement | null ? { current: videoRef.current?.parentElement as HTMLDivElement } : { current: null }}
+                handControlRef={handControlRef}
+                fps={fps}
+                tracking={tracking}
+                handTracking={handTracking}
+                activeEffect={active.name}
+                intensity={intensity}
+              />
+            )}
 
             {cameraOn && (
               <>
