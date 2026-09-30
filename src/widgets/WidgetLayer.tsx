@@ -3,7 +3,7 @@ import {
   Activity, ChevronLeft, ChevronRight, Clock3, ExternalLink, Globe2, GripVertical,
   Lock, Maximize2, Minimize2, RefreshCw, RotateCcw, Search, Sparkles, Unlock, X
 } from "lucide-react";
-import type { MutableRefObject, RefObject } from "react";
+import type { MutableRefObject, RefObject, PointerEvent as ReactPointerEvent } from "react";
 import type { WidgetFrame, WidgetKind } from "../types";
 
 type HandControl = { point: { x: number; y: number } | null; pinch: boolean };
@@ -100,7 +100,7 @@ export function WidgetLayer({ frameRef, handControlRef, fps, tracking, handTrack
     updateWidget(id, { z: max + 1 });
   };
 
-  const beginPointer = (event: React.PointerEvent, widget: WidgetFrame, mode: "move" | "resize" | "rotate") => {
+  const beginPointer = (event: ReactPointerEvent, widget: WidgetFrame, mode: "move" | "resize" | "rotate") => {
     if (widget.locked) return;
     event.preventDefault();
     event.stopPropagation();
