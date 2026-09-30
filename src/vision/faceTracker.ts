@@ -14,7 +14,16 @@ export class FaceTracker {
   private lastVideoTime = -1;
 
   async init() {
-    const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+    let vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>;
+
+    try {
+      vision = await FilesetResolver.forVisionTasks(WASM_URL);
+    } catch (error) {
+      console.error("LUMAROZ VISION: MediaPipe WASM failed to load.", error);
+      throw new Error(
+        "MediaPipe WASM could not load. Check that Chrome can reach cdn.jsdelivr.net."
+      );
+    }
 
     try {
       // GPU is preferred for smooth real-time effects.
@@ -34,21 +43,27 @@ export class FaceTracker {
     } catch (gpuError) {
       console.warn("LUMAROZ VISION: GPU face tracker unavailable; falling back to CPU.", gpuError);
 
-      // Some browsers/GPUs cannot initialize MediaPipe's WebGL delegate.
-      // CPU keeps the camera experience functional instead of failing startup.
-      this.landmarker = await FaceLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: MODEL_URL,
-          delegate: "CPU"
-        },
-        runningMode: "VIDEO",
-        numFaces: 1,
-        minFaceDetectionConfidence: 0.55,
-        minFacePresenceConfidence: 0.55,
-        minTrackingConfidence: 0.55,
-        outputFaceBlendshapes: false,
-        outputFacialTransformationMatrixes: false
-      });
+      try {
+        // Some browsers/GPUs cannot initialize MediaPipe's WebGL delegate.
+        this.landmarker = await FaceLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: MODEL_URL,
+            delegate: "CPU"
+          },
+          runningMode: "VIDEO",
+          numFaces: 1,
+          minFaceDetectionConfidence: 0.55,
+          minFacePresenceConfidence: 0.55,
+          minTrackingConfidence: 0.55,
+          outputFaceBlendshapes: false,
+          outputFacialTransformationMatrixes: false
+        });
+      } catch (cpuError) {
+        console.error("LUMAROZ VISION: MediaPipe face model failed to load.", cpuError);
+        throw new Error(
+          "MediaPipe face model could not load. Check that Chrome can reach storage.googleapis.com."
+        );
+      }
     }
   }
 
