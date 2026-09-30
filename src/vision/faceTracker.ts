@@ -13,6 +13,40 @@ const FACE_MODEL_URL =
 const HAND_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 
+async function fetchModel(url: string, label: string, timeoutMs = 20000): Promise<Uint8Array> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "force-cache",
+      signal: controller.signal,
+      mode: "cors"
+    });
+
+    if (!response.ok) {
+      throw new Error(`${label} download returned HTTP ${response.status} ${response.statusText}.`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    if (!buffer.byteLength) {
+      throw new Error(`${label} download returned an empty file.`);
+    }
+
+    return new Uint8Array(buffer);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`${label} download timed out after ${timeoutMs / 1000}s.`);
+    }
+    if (error instanceof TypeError) {
+      throw new Error(`${label} download was blocked by the browser/network. Check access to storage.googleapis.com.`);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 function distance(a: Point, b: Point) {
   return Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0));
 }
@@ -52,9 +86,18 @@ export class FaceTracker {
     }
 
     // FACE IS THE CRITICAL PATH.
-    // Do not block the entire Vision Engine on optional hand-model loading.
+    // Fetch the model explicitly so a network problem becomes a visible,
+    // actionable error instead of leaving the UI stuck on "LOADING".
+    let faceModel: Uint8Array;
     try {
-      this.face = await this.createFaceTracker(vision);
+      faceModel = await fetchModel(FACE_MODEL_URL, "Face model");
+    } catch (error) {
+      console.error("LUMAROZ VISION: face model download failed.", error);
+      throw error;
+    }
+
+    try {
+      this.face = await this.createFaceTracker(vision, faceModel);
     } catch (error) {
       console.error("LUMAROZ VISION: face model failed to initialize.", error);
       throw new Error(
@@ -68,11 +111,12 @@ export class FaceTracker {
   }
 
   private async createFaceTracker(
-    vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>
+    vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>,
+    model: Uint8Array
   ) {
     try {
       return await FaceLandmarker.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate: "GPU" },
+        baseOptions: { modelAssetBuffer: model, delegate: "GPU" },
         runningMode: "VIDEO",
         numFaces: 1,
         minFaceDetectionConfidence: 0.55,
@@ -89,7 +133,7 @@ export class FaceTracker {
 
       try {
         return await FaceLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate: "CPU" },
+          baseOptions: { modelAssetBuffer: model, delegate: "CPU" },
           runningMode: "VIDEO",
           numFaces: 1,
           minFaceDetectionConfidence: 0.55,
@@ -109,8 +153,9 @@ export class FaceTracker {
     vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>
   ) {
     try {
+      const handModel = await fetchModel(HAND_MODEL_URL, "Hand model");
       this.hands = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "GPU" },
+        baseOptions: { modelAssetBuffer: handModel, delegate: "GPU" },
         runningMode: "VIDEO",
         numHands: 2,
         minHandDetectionConfidence: 0.5,
@@ -123,7 +168,7 @@ export class FaceTracker {
 
       try {
         this.hands = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "CPU" },
+          baseOptions: { modelAssetBuffer: handModel, delegate: "CPU" },
           runningMode: "VIDEO",
           numHands: 2,
           minHandDetectionConfidence: 0.5,
