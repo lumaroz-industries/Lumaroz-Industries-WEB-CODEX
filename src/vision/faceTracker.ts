@@ -7,11 +7,26 @@ import {
 } from "@mediapipe/tasks-vision";
 import type { FaceFrame, HandFrame, Point, VisionFrame } from "../types";
 
-const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm";
+const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
 const FACE_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 const HAND_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer = 0;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 async function fetchModel(url: string, label: string, timeoutMs = 20000): Promise<Uint8Array> {
   const controller = new AbortController();
@@ -77,7 +92,11 @@ export class FaceTracker {
     let vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>;
 
     try {
-      vision = await FilesetResolver.forVisionTasks(WASM_URL);
+      vision = await withTimeout(
+        FilesetResolver.forVisionTasks(WASM_URL),
+        15000,
+        "MediaPipe WASM initialization timed out. Check cdn.jsdelivr.net and reload."
+      );
     } catch (error) {
       console.error("LUMAROZ VISION: MediaPipe WASM failed to load.", error);
       throw new Error(
@@ -115,7 +134,7 @@ export class FaceTracker {
     model: Uint8Array
   ) {
     try {
-      return await FaceLandmarker.createFromOptions(vision, {
+      return await withTimeout(FaceLandmarker.createFromOptions(vision, {
         baseOptions: { modelAssetBuffer: model, delegate: "GPU" },
         runningMode: "VIDEO",
         numFaces: 1,
@@ -132,7 +151,7 @@ export class FaceTracker {
       );
 
       try {
-        return await FaceLandmarker.createFromOptions(vision, {
+        return await withTimeout(FaceLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetBuffer: model, delegate: "CPU" },
           runningMode: "VIDEO",
           numFaces: 1,
@@ -141,7 +160,7 @@ export class FaceTracker {
           minTrackingConfidence: 0.55,
           outputFaceBlendshapes: false,
           outputFacialTransformationMatrixes: false
-        });
+        }), 15000, "CPU face tracker initialization timed out.");
       } catch (cpuError) {
         console.error("LUMAROZ VISION: CPU face tracker failed.", cpuError);
         throw cpuError;
@@ -194,7 +213,13 @@ export class FaceTracker {
     this.lastVideoTime = video.currentTime;
     const now = performance.now();
 
-    const faceResult: FaceLandmarkerResult = this.face.detectForVideo(video, now);
+    let faceResult: FaceLandmarkerResult;
+    try {
+      faceResult = this.face.detectForVideo(video, now);
+    } catch (error) {
+      console.warn("LUMAROZ VISION: face detection frame skipped.", error);
+      return { face: null, hands: [] };
+    }
     const landmarks = faceResult.faceLandmarks?.[0];
 
     let face: FaceFrame | null = null;
