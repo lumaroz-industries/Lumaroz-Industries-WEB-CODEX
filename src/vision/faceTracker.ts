@@ -134,25 +134,9 @@ export class FaceTracker {
     model: Uint8Array
   ) {
     try {
-      return await withTimeout(FaceLandmarker.createFromOptions(vision, {
-        baseOptions: { modelAssetBuffer: model, delegate: "GPU" },
-        runningMode: "VIDEO",
-        numFaces: 1,
-        minFaceDetectionConfidence: 0.55,
-        minFacePresenceConfidence: 0.55,
-        minTrackingConfidence: 0.55,
-        outputFaceBlendshapes: false,
-        outputFacialTransformationMatrixes: false
-      });
-    } catch (gpuError) {
-      console.warn(
-        "LUMAROZ VISION: GPU face tracker unavailable; falling back to CPU.",
-        gpuError
-      );
-
-      try {
-        return await withTimeout(FaceLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetBuffer: model, delegate: "CPU" },
+      return await withTimeout(
+        FaceLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetBuffer: model, delegate: "GPU" },
           runningMode: "VIDEO",
           numFaces: 1,
           minFaceDetectionConfidence: 0.55,
@@ -160,7 +144,31 @@ export class FaceTracker {
           minTrackingConfidence: 0.55,
           outputFaceBlendshapes: false,
           outputFacialTransformationMatrixes: false
-        }), 15000, "CPU face tracker initialization timed out.");
+        }),
+        12000,
+        "GPU face tracker initialization timed out."
+      );
+    } catch (gpuError) {
+      console.warn(
+        "LUMAROZ VISION: GPU face tracker unavailable; falling back to CPU.",
+        gpuError
+      );
+
+      try {
+        return await withTimeout(
+          FaceLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetBuffer: model, delegate: "CPU" },
+            runningMode: "VIDEO",
+            numFaces: 1,
+            minFaceDetectionConfidence: 0.55,
+            minFacePresenceConfidence: 0.55,
+            minTrackingConfidence: 0.55,
+            outputFaceBlendshapes: false,
+            outputFacialTransformationMatrixes: false
+          }),
+          15000,
+          "CPU face tracker initialization timed out."
+        );
       } catch (cpuError) {
         console.error("LUMAROZ VISION: CPU face tracker failed.", cpuError);
         throw cpuError;
@@ -171,29 +179,45 @@ export class FaceTracker {
   private async initHands(
     vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>
   ) {
-    try {
-      const handModel = await fetchModel(HAND_MODEL_URL, "Hand model");
-      this.hands = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: { modelAssetBuffer: handModel, delegate: "GPU" },
-        runningMode: "VIDEO",
-        numHands: 2,
-        minHandDetectionConfidence: 0.5,
-        minHandPresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5
-      });
-      console.info("LUMAROZ VISION: hand tracker online.");
-    } catch (gpuError) {
-      console.warn("LUMAROZ VISION: GPU hand tracker unavailable; trying CPU.", gpuError);
+    let handModel: Uint8Array;
 
-      try {
-        this.hands = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetBuffer: handModel, delegate: "CPU" },
+    try {
+      handModel = await fetchModel(HAND_MODEL_URL, "Hand model");
+    } catch (error) {
+      console.warn("LUMAROZ VISION: hand model download failed; face tracking remains online.", error);
+      return;
+    }
+
+    try {
+      this.hands = await withTimeout(
+        HandLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetBuffer: handModel, delegate: "GPU" },
           runningMode: "VIDEO",
           numHands: 2,
           minHandDetectionConfidence: 0.5,
           minHandPresenceConfidence: 0.5,
           minTrackingConfidence: 0.5
-        });
+        }),
+        12000,
+        "GPU hand tracker initialization timed out."
+      );
+      console.info("LUMAROZ VISION: hand tracker online.");
+    } catch (gpuError) {
+      console.warn("LUMAROZ VISION: GPU hand tracker unavailable; trying CPU.", gpuError);
+
+      try {
+        this.hands = await withTimeout(
+          HandLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetBuffer: handModel, delegate: "CPU" },
+            runningMode: "VIDEO",
+            numHands: 2,
+            minHandDetectionConfidence: 0.5,
+            minHandPresenceConfidence: 0.5,
+            minTrackingConfidence: 0.5
+          }),
+          15000,
+          "CPU hand tracker initialization timed out."
+        );
         console.info("LUMAROZ VISION: hand tracker online on CPU.");
       } catch (handError) {
         console.warn(
