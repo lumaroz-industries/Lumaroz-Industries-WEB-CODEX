@@ -10,7 +10,21 @@ export type FaceFrame = {
   timestamp: number;
 };
 
-export type EffectId = "orbit" | "grid" | "halo" | "scan" | "prism";
+export type HandFrame = {
+  landmarks: Point[];
+  center: Point;
+  scale: number;
+  handedness: "Left" | "Right" | "Unknown";
+  gesture: "none" | "pinch" | "claw" | "open";
+  timestamp: number;
+};
+
+export type VisionFrame = {
+  face: FaceFrame | null;
+  hands: HandFrame[];
+};
+
+export type EffectId = "orbit" | "grid" | "halo" | "scan" | "prism" | "constellation" | "neural";
 
 export type EffectPreset = {
   id: EffectId;
