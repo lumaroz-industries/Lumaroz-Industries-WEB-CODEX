@@ -81,6 +81,7 @@ function ClockBody() {
 
 export function WidgetLayer({ frameRef, handControlRef, fps, tracking, handTracking, activeEffect, intensity }: Props) {
   const [widgets, setWidgets] = useState(DEFAULT_WIDGETS);
+  const [launcherOpen, setLauncherOpen] = useState(false);
   const widgetsRef = useRef(widgets);
   const pinchRef = useRef<{ id: string; x: number; y: number } | null>(null);
   const dragRef = useRef<{
@@ -98,6 +99,22 @@ export function WidgetLayer({ frameRef, handControlRef, fps, tracking, handTrack
   const bringFront = (id: string) => {
     const max = Math.max(...widgetsRef.current.map((w) => w.z), 0);
     updateWidget(id, { z: max + 1 });
+  };
+
+  const addWidget = (kind: WidgetKind) => {
+    const id = kind + "-" + Date.now();
+    const max = Math.max(...widgetsRef.current.map((w) => w.z), 0);
+    const title = kind === "browser" ? "CHROME // WEB" : kind === "system" ? "SYSTEM" : kind === "clock" ? "TIME" : "VISION CORE";
+    const size = kind === "browser"
+      ? { width: 430, height: 280 }
+      : kind === "system"
+        ? { width: 235, height: 156 }
+        : { width: 220, height: 122 };
+    setWidgets((current) => [...current, {
+      id, kind, title, x: 10 + (current.length * 3) % 45, y: 10 + (current.length * 4) % 55,
+      width: size.width, height: size.height, rotation: 0, locked: false, z: max + 1, minimized: false
+    }]);
+    setLauncherOpen(false);
   };
 
   const beginPointer = (event: ReactPointerEvent, widget: WidgetFrame, mode: "move" | "resize" | "rotate") => {
@@ -215,6 +232,19 @@ export function WidgetLayer({ frameRef, handControlRef, fps, tracking, handTrack
 
   return (
     <div className="widget-layer">
+      <div className="widget-launcher">
+        {launcherOpen && (
+          <div className="widget-menu">
+            <button onClick={() => addWidget("vision")}>VISION CORE</button>
+            <button onClick={() => addWidget("system")}>SYSTEM MONITOR</button>
+            <button onClick={() => addWidget("clock")}>CLOCK</button>
+            <button onClick={() => addWidget("browser")}>CHROME // WEB</button>
+          </div>
+        )}
+        <button onClick={() => setLauncherOpen((value) => !value)}>
+          <Sparkles size={12} /> WIDGETS {launcherOpen ? "—" : "+"}
+        </button>
+      </div>
       {widgets.map((widget) => (
         <div key={widget.id} className={"holo-widget " + (widget.minimized ? "minimized " : "") + (widget.locked ? "locked" : "")}
           data-widget-id={widget.id} data-z={widget.z}
